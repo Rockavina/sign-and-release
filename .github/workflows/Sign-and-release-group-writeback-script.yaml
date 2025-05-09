@@ -1,0 +1,82 @@
+name: Sign and release scripts
+
+on:
+#  push:
+#    branches:
+#      - main
+#    paths:
+#      - 'scripts/**'
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  Sign-and-release-group-writeback-script:
+    runs-on: windows-latest # windows is required for azuresigntool
+    env:
+      AZURE_RESOURCE_GROUP: oslovavtek-ikt-KeyVaults
+      AZURE_KEY_VAULT_NAME: id-ikt-kv01
+      ZIP_FILE: ./user-sync-tool.zip
+      AZURESIGNTOOL: ./AzureSignTool.exe
+      AZST_KEYVAULT_URL: https://id-ikt-kv01.vault.azure.net/
+      AZST_CERTIFICATE_NAME: Oslovav-TEK-Internal-Code-Signing
+      AZST_TIMESTAMP_URL: http://timestamp.acs.microsoft.com
+
+    steps:
+      - name: Set environment
+        run: |
+          $ExternalIP = Invoke-RestMethod -Uri 'https://api.ipify.org/?format=text'
+
+          Add-Content -Path $env:GITHUB_ENV -Value "GH_RUNNER_EXT_IP=$ExternalIP"
+      
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+            fetch-depth: 0
+
+      - name: OIDC Login to Tenant
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Download AzureSignTool
+        run: Invoke-WebRequest -Uri 'https://github.com/vcsjones/AzureSignTool/releases/download/v6.0.1/AzureSignTool-X64.exe' -OutFile $env:AZURESIGNTOOL
+
+      - name: Whitelist gitlab runner for key vault access
+        run: az keyvault network-rule add --resource-group $env:AZURE_RESOURCE_GROUP --name $env:AZURE_KEY_VAULT_NAME --ip-address $env:GH_RUNNER_EXT_IP
+  
+      - name: Sign scripts
+        run: |
+          $ScriptsToSign = (Get-ChildItem -Path ".\scripts\*.ps1" -recurse).FullName -split '`n'
+            
+          .\pipeline-scripts\Sign-File.ps1 -Path $ScriptsToSign -Verbose
+
+      - name: Create zip
+        run: Compress-Archive -Path .\scripts\ -DestinationPath $env:ZIP_FILE
+
+      - name: Increment tag
+        run: |
+          $NewTag = .\pipeline-scripts\New-VersionTag.ps1 -Verbose
+
+          Add-Content -Path $env:GITHUB_ENV -Value "NEW_TAG=$NewTag"
+
+      - name: Push tag
+        run: |
+          git tag $env:NEW_TAG
+          git push origin $env:NEW_TAG
+
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ env.NEW_TAG }}
+          artifacts: ${{ env.ZIP_FILE }}
+      
+      - name: Remove gitlab runner IP from key vault whitelist
+        if: always()
+        run: az keyvault network-rule remove --resource-group $env:AZURE_RESOURCE_GROUP --name $env:AZURE_KEY_VAULT_NAME --ip-address $env:GH_RUNNER_EXT_IP

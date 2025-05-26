@@ -24,7 +24,7 @@ Access to the signing certificate is provided through a Managed Identity and OID
 
 | Identity | Permissions | Description
 |--|--|--|
-| mi-github-script-signing | kv-example-01: [custom] Key Vault Crypto User |
+| mi-github-script-signing | kv-example-01: [custom] Key Vault Crypto User | Custom rbac role combining *Key Vault Reader* and *Key Vault Crypto User*
 
 ## GitHub secrets
 

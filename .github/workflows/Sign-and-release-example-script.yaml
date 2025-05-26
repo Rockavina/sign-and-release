@@ -14,7 +14,7 @@ permissions:
   id-token: write # Required for OIDC workload identity federation
 
 jobs:
-  Sign-and-release-group-writeback-script:
+  Sign-and-release-example-script:
     runs-on: windows-latest # windows is required for azuresigntool
     env:
       AZURE_RESOURCE_GROUP: rg-example-keyvaults

@@ -1,0 +1,68 @@
+name: Sign and release scripts
+
+on:
+#  push:
+#    branches:
+#      - main
+#    paths:
+#      - 'scripts/**'
+
+  workflow_dispatch:
+
+permissions:
+  contents: write # Create zip
+  id-token: write # Required for OIDC workload identity federation
+
+jobs:
+  Sign-and-release-group-writeback-script:
+    runs-on: windows-latest # windows is required for azuresigntool
+    env:
+      AZURE_RESOURCE_GROUP: rg-example-keyvaults
+      AZURE_KEY_VAULT_NAME: kv-example-01
+      ZIP_FILE: ./example-scripts.zip
+      AZURESIGNTOOL: ./AzureSignTool.exe
+      AZST_KEYVAULT_URL: https://kv-example-01.vault.azure.net/
+      AZST_CERTIFICATE_NAME: Internal-Code-Signing
+      AZST_TIMESTAMP_URL: http://timestamp.acs.microsoft.com
+
+    steps:     
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+            fetch-depth: 0 # Required for generating new version tag
+
+      - name: OIDC Login to Tenant
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  
+      - name: Download AzureSignTool
+        run: Invoke-WebRequest -Uri 'https://github.com/vcsjones/AzureSignTool/releases/download/v6.0.1/AzureSignTool-X64.exe' -OutFile $env:AZURESIGNTOOL
+  
+      - name: Sign scripts
+        run: |
+          $ScriptsToSign = (Get-ChildItem -Path ".\scripts\*.ps1" -recurse).FullName -split '`n'
+            
+          .\pipeline-scripts\Sign-File.ps1 -Path $ScriptsToSign -Verbose
+
+      - name: Create zip
+        run: Compress-Archive -Path .\scripts\ -DestinationPath $env:ZIP_FILE
+
+      - name: Increment tag
+        run: |
+          $NewTag = .\pipeline-scripts\New-VersionTag.ps1 -Verbose
+
+          Add-Content -Path $env:GITHUB_ENV -Value "NEW_TAG=$NewTag"
+
+      - name: Push tag
+        run: |
+          git tag $env:NEW_TAG
+          git push origin $env:NEW_TAG
+
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ env.NEW_TAG }}
+          artifacts: ${{ env.ZIP_FILE }}

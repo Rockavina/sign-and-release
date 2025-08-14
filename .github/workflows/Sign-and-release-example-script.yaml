@@ -62,7 +62,7 @@ jobs:
           git push origin $env:NEW_TAG
 
       - name: Release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: ${{ env.NEW_TAG }}
-          artifacts: ${{ env.ZIP_FILE }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ${{ env.NEW_TAG }} ${{ env.ZIP_FILE }} --fail-on-no-commits

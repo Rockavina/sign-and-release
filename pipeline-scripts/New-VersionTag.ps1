@@ -82,14 +82,22 @@ if ([string]::IsNullOrEmpty($GitLatestRevTag)) {
 
     } else {
 
-        if ($Matches[1] -ne $Year -and $Matches[2] -ne $Month) {
+        if ($Matches[1] -ne $Year) {
+       
+            # New year
+            Write-Verbose "New year, restart version at 001."
+            $NewTag = GetUniqueTag $DefaultTag
+    
+        } elseif ($Matches[2] -ne $Month){
        
             # New month
-            $NewTag = $DefaultTag
+            Write-Verbose "New month, restart version at 001."
+            $NewTag = GetUniqueTag $DefaultTag
     
         } else {
             
             # Increment build no by 1
+            Write-Verbose "Same year+month, increment version by 1."
             $NewTag = GetUniqueTag $LatestTag
         
         }
